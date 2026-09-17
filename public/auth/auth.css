@@ -1,0 +1,589 @@
+/* RailSync AI - Indian Railways Operations Control Room Authentication Styling */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  --ir-bg-base: #0B0F19;
+  --ir-bg-surface: #111827;
+  --ir-bg-card: #161F30;
+  --ir-border: #2D3748;
+  --ir-border-light: #374151;
+  --ir-primary: #2563EB;
+  --ir-primary-hover: #1D4ED8;
+  --ir-primary-glow: rgba(37, 99, 235, 0.35);
+  --ir-accent: #38BDF8;
+  --ir-danger: #EF4444;
+  --ir-warning: #F59E0B;
+  --ir-success: #10B981;
+  --ir-text: #F9FAFB;
+  --ir-text-muted: #9CA3AF;
+  --ir-text-subtle: #6B7280;
+}
+
+/* Base modal overlay for Auth Views */
+.railsync-auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 20%, #151D2F 0%, #080B12 100%);
+  padding: 1.25rem;
+  overflow-y: auto;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--ir-text);
+  box-sizing: border-box;
+}
+
+/* Decorative backdrop grid */
+.railsync-auth-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: 
+    linear-gradient(rgba(37, 99, 235, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+}
+
+/* Card Container */
+.railsync-auth-card {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  background: var(--ir-bg-card);
+  border: 1px solid var(--ir-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  padding: 2.25rem;
+  backdrop-filter: blur(12px);
+  animation: rsFadeScale 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes rsFadeScale {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Card Header */
+.railsync-auth-header {
+  text-align: center;
+  margin-bottom: 1.75rem;
+}
+
+.railsync-auth-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.railsync-auth-logo-badge {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #1E40AF, #2563EB);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 1.25rem;
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px var(--ir-primary-glow);
+}
+
+.railsync-auth-brand-text {
+  text-align: left;
+}
+
+.railsync-auth-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+  line-height: 1.2;
+}
+
+.railsync-auth-subtitle {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ir-accent);
+}
+
+.railsync-auth-tagline {
+  font-size: 0.82rem;
+  color: var(--ir-text-muted);
+  margin-top: 0.5rem;
+}
+
+/* Indian Railways Operational Notice Banner */
+.railsync-ir-notice {
+  background: rgba(31, 41, 55, 0.6);
+  border-left: 3px solid var(--ir-accent);
+  padding: 0.55rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.73rem;
+  color: #D1D5DB;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Demo Role Picker Chips */
+.railsync-demo-roles {
+  margin-bottom: 1.25rem;
+  background: #0D1321;
+  border: 1px solid var(--ir-border);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+}
+
+.railsync-demo-roles-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ir-text-subtle);
+  margin-bottom: 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.railsync-demo-roles-badge {
+  color: var(--ir-warning);
+  font-size: 0.65rem;
+}
+
+.railsync-role-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.railsync-role-chip {
+  background: var(--ir-bg-surface);
+  border: 1px solid var(--ir-border-light);
+  color: #D1D5DB;
+  font-size: 0.72rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 500;
+}
+
+.railsync-role-chip:hover {
+  background: #1F2937;
+  color: #FFFFFF;
+  border-color: var(--ir-primary);
+}
+
+.railsync-role-chip.active {
+  background: rgba(37, 99, 235, 0.2);
+  border-color: var(--ir-primary);
+  color: #60A5FA;
+  box-shadow: 0 0 8px rgba(37, 99, 235, 0.3);
+}
+
+/* Form Groups & Inputs */
+.railsync-form-group {
+  margin-bottom: 1rem;
+}
+
+.railsync-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #D1D5DB;
+  margin-bottom: 0.35rem;
+}
+
+.railsync-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.railsync-input {
+  width: 100%;
+  height: 40px;
+  background: #0D1321;
+  border: 1px solid var(--ir-border-light);
+  border-radius: 6px;
+  padding: 0 0.85rem;
+  color: #FFFFFF;
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.railsync-input:focus {
+  outline: none;
+  border-color: var(--ir-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.railsync-input-wrap .railsync-input-icon {
+  position: absolute;
+  right: 0.75rem;
+  background: none;
+  border: none;
+  color: var(--ir-text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  transition: color 0.15s;
+}
+
+.railsync-input-wrap .railsync-input-icon:hover {
+  color: #FFFFFF;
+}
+
+/* Form Helper row */
+.railsync-form-helper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  margin: 0.75rem 0 1.25rem 0;
+}
+
+.railsync-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--ir-text-muted);
+  cursor: pointer;
+}
+
+.railsync-checkbox-label input {
+  accent-color: var(--ir-primary);
+  cursor: pointer;
+}
+
+.railsync-link {
+  color: var(--ir-accent);
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.railsync-link:hover {
+  text-decoration: underline;
+  color: #60A5FA;
+}
+
+/* Submit Button */
+.railsync-btn-primary {
+  width: 100%;
+  height: 42px;
+  background: linear-gradient(180deg, #2563EB 0%, #1D4ED8 100%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: #FFFFFF;
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 12px var(--ir-primary-glow);
+}
+
+.railsync-btn-primary:hover {
+  background: linear-gradient(180deg, #3B82F6 0%, #2563EB 100%);
+  transform: translateY(-1px);
+}
+
+.railsync-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Secondary Button */
+.railsync-btn-secondary {
+  width: 100%;
+  height: 38px;
+  background: var(--ir-bg-surface);
+  border: 1px solid var(--ir-border-light);
+  border-radius: 6px;
+  color: #D1D5DB;
+  font-weight: 500;
+  font-size: 0.82rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.75rem;
+  transition: all 0.15s ease;
+}
+
+.railsync-btn-secondary:hover {
+  background: #1F2937;
+  color: #FFFFFF;
+  border-color: #4B5563;
+}
+
+/* Error & Success Messages */
+.railsync-alert {
+  padding: 0.65rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  line-height: 1.4;
+}
+
+.railsync-alert-danger {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #FCA5A5;
+}
+
+.railsync-alert-success {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #6EE7B7;
+}
+
+/* Footer info */
+.railsync-auth-footer {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--ir-border);
+  text-align: center;
+}
+
+.railsync-auth-footer-text {
+  font-size: 0.7rem;
+  color: var(--ir-text-subtle);
+  margin-bottom: 0.4rem;
+}
+
+.railsync-auth-disclaimer {
+  font-size: 0.65rem;
+  color: var(--ir-warning);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* User Badge In Header (Injected by auth.js) */
+.railsync-header-badge-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  position: relative;
+}
+
+.railsync-user-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.65rem;
+  background: #1F2937;
+  border: 1px solid var(--ir-border-light);
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.railsync-user-pill:hover {
+  background: #283548;
+  border-color: var(--ir-primary);
+}
+
+.railsync-avatar-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ir-primary);
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.railsync-user-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #F3F4F6;
+}
+
+.railsync-role-tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.role-admin { background: rgba(147, 51, 234, 0.2); color: #C084FC; border: 1px solid rgba(147, 51, 234, 0.4); }
+.role-controller { background: rgba(37, 99, 235, 0.2); color: #60A5FA; border: 1px solid rgba(37, 99, 235, 0.4); }
+.role-engineering { background: rgba(245, 158, 11, 0.2); color: #FCD34D; border: 1px solid rgba(245, 158, 11, 0.4); }
+.role-ohe { background: rgba(16, 185, 129, 0.2); color: #6EE7B7; border: 1px solid rgba(16, 185, 129, 0.4); }
+.role-snt { background: rgba(6, 182, 212, 0.2); color: #67E8F9; border: 1px solid rgba(6, 182, 212, 0.4); }
+
+/* User Profile Dropdown */
+.railsync-profile-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 290px;
+  background: #111827;
+  border: 1px solid var(--ir-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.7);
+  z-index: 10000;
+  padding: 0.85rem;
+  display: none;
+}
+
+.railsync-profile-dropdown.open {
+  display: block;
+  animation: rsFadeScale 0.18s ease forwards;
+}
+
+.railsync-dropdown-header {
+  border-bottom: 1px solid var(--ir-border);
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.railsync-dropdown-emp-id {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  color: var(--ir-accent);
+}
+
+.railsync-dropdown-dept {
+  font-size: 0.72rem;
+  color: var(--ir-text-muted);
+  margin-top: 0.2rem;
+}
+
+.railsync-dropdown-section-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--ir-text-subtle);
+  margin-bottom: 0.4rem;
+}
+
+.railsync-dropdown-role-btn {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  color: #D1D5DB;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.2rem;
+  transition: all 0.15s;
+}
+
+.railsync-dropdown-role-btn:hover {
+  background: #1F2937;
+  color: #FFFFFF;
+}
+
+.railsync-dropdown-role-btn.active {
+  background: rgba(37, 99, 235, 0.15);
+  border-color: var(--ir-primary);
+  color: #60A5FA;
+}
+
+.railsync-dropdown-logout {
+  width: 100%;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #F87171;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.45rem;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 0.75rem;
+  transition: all 0.15s;
+}
+
+.railsync-dropdown-logout:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #FFFFFF;
+}
+
+/* Access Restriction Overlay Card */
+.railsync-restricted-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+  padding: 2rem;
+}
+
+.railsync-restricted-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  display: grid;
+  place-items: center;
+  color: #EF4444;
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.railsync-restricted-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 0.5rem;
+}
+
+.railsync-restricted-desc {
+  font-size: 0.85rem;
+  color: #9CA3AF;
+  max-width: 440px;
+  margin-bottom: 1.25rem;
+  line-height: 1.5;
+}
+
+/* Top Disclaimer Banner */
+.railsync-top-disclaimer {
+  background: #1E1B18;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  color: #FCD34D;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.2rem 1rem;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}

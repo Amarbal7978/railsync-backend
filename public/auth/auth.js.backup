@@ -1,0 +1,990 @@
+/**
+ * RailSync AI - Indian Railways Frontend Authentication Controller
+ * Implements deterministic role-based authentication, session persistence,
+ * control-room styled auth screens, route guards, and quick role switching.
+ */
+
+(function() {
+  'use strict';
+
+  // Deterministic Demo Users
+  const DEMO_USERS = {
+    'admin@railsync.ai': {
+      id: 'usr_admin_01',
+      employeeId: 'IR-892011-ADM',
+      name: 'Rajesh Sharma',
+      email: 'admin@railsync.ai',
+      department: 'Administration & Operations IT',
+      role: 'System Administrator',
+      roleKey: 'admin',
+      division: 'Delhi (DLI)',
+      zone: 'Northern Railway (NR)',
+      status: 'Active',
+      lastLogin: '2026-09-12 17:30',
+      createdAt: '2026-01-15',
+      allowedRoutes: ['*']
+    },
+    'controller@railsync.ai': {
+      id: 'usr_ctrl_02',
+      employeeId: 'IR-774023-CTR',
+      name: 'Vikram Singh',
+      email: 'controller@railsync.ai',
+      department: 'Operating / Section Control',
+      role: 'Section Controller',
+      roleKey: 'controller',
+      division: 'Delhi (GZB–ALJN Section)',
+      zone: 'Northern Railway (NR)',
+      status: 'Active',
+      lastLogin: '2026-09-12 17:45',
+      createdAt: '2026-02-01',
+      allowedRoutes: ['/', '/trains', '/conflicts', '/planner', '/simulator', '/network', '/copilot', '/weekly', '/monthly']
+    },
+    'engineering@railsync.ai': {
+      id: 'usr_eng_03',
+      employeeId: 'IR-552109-ENG',
+      name: 'Amit Kumar Verma',
+      email: 'engineering@railsync.ai',
+      department: 'Civil Engineering / Permanent Way',
+      role: 'Engineering Officer',
+      roleKey: 'engineering',
+      division: 'Delhi (DLI)',
+      zone: 'Northern Railway (NR)',
+      status: 'Active',
+      lastLogin: '2026-09-12 16:15',
+      createdAt: '2026-02-10',
+      allowedRoutes: ['/', '/intelligence', '/fusion', '/planner', '/network', '/weekly', '/monthly', '/copilot']
+    },
+    'ohe@railsync.ai': {
+      id: 'usr_ohe_04',
+      employeeId: 'IR-339842-OHE',
+      name: 'Suresh Nair',
+      email: 'ohe@railsync.ai',
+      department: 'Electrical / OHE Traction',
+      role: 'OHE Officer',
+      roleKey: 'ohe',
+      division: 'Delhi (DLI)',
+      zone: 'Northern Railway (NR)',
+      status: 'Active',
+      lastLogin: '2026-09-12 15:20',
+      createdAt: '2026-03-01',
+      allowedRoutes: ['/', '/asset-health', '/intelligence', '/planner', '/network', '/copilot']
+    },
+    'snt@railsync.ai': {
+      id: 'usr_snt_05',
+      employeeId: 'IR-441208-SNT',
+      name: 'Pooja Deshmukh',
+      email: 'snt@railsync.ai',
+      department: 'Signal & Telecommunication',
+      role: 'S&T Officer',
+      roleKey: 'snt',
+      division: 'Delhi (DLI)',
+      zone: 'Northern Railway (NR)',
+      status: 'Active',
+      lastLogin: '2026-09-12 14:10',
+      createdAt: '2026-03-05',
+      allowedRoutes: ['/', '/intelligence', '/planner', '/network', '/copilot']
+    }
+  };
+
+  // Map employee IDs to demo users
+  const DEMO_USERS_BY_EMP_ID = {};
+  Object.values(DEMO_USERS).forEach(u => {
+    DEMO_USERS_BY_EMP_ID[u.employeeId.toLowerCase()] = u;
+  });
+
+  const STORAGE_KEY_USER = 'railsync_auth_user';
+  const STORAGE_KEY_TOKEN = 'base44_access_token';
+  const STORAGE_KEY_REMEMBER = 'railsync_remember_me';
+
+  // Auth State
+  const RailSyncAuth = {
+    currentUser: null,
+    activeView: null, // 'login', 'register', 'forgot-password', 'reset-password'
+
+    init() {
+      // 1. Restore session from localStorage
+      this.restoreSession();
+
+      // 2. Install Network Interceptors (fetch & XMLHttpRequest)
+      this.installInterceptors();
+
+      // 3. Inject Top Operational Disclaimer
+      this.injectTopDisclaimer();
+
+      // 4. Handle initial route and auth check
+      this.checkRouteAndAuth();
+
+      // 5. Setup route listener for SPA navigation
+      this.listenToNavigation();
+
+      // 6. Setup DOM observer for layout header personnel badge
+      this.setupHeaderObserver();
+    },
+
+    restoreSession() {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY_USER);
+        if (saved) {
+          this.currentUser = JSON.parse(saved);
+        }
+      } catch (e) {
+        console.error('Failed to restore session:', e);
+        this.currentUser = null;
+      }
+    },
+
+    saveSession(user, rememberMe = true) {
+      this.currentUser = user;
+      const token = `demo_token_${user.id}_${Date.now()}`;
+      try {
+        localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
+        localStorage.setItem(STORAGE_KEY_TOKEN, token);
+        localStorage.setItem(STORAGE_KEY_REMEMBER, rememberMe ? 'true' : 'false');
+      } catch (e) {}
+    },
+
+    clearSession() {
+      this.currentUser = null;
+      try {
+        localStorage.removeItem(STORAGE_KEY_USER);
+        localStorage.removeItem(STORAGE_KEY_TOKEN);
+        localStorage.removeItem(STORAGE_KEY_REMEMBER);
+      } catch (e) {}
+    },
+
+    login(identifier, password, rememberMe = true) {
+      const key = (identifier || '').trim().toLowerCase();
+      const user = DEMO_USERS[key] || DEMO_USERS_BY_EMP_ID[key];
+
+      if (!user) {
+        return { success: false, message: 'Invalid Employee ID / Email or Password. Please select a valid Railway Demo Role.' };
+      }
+
+      user.lastLogin = new Date().toISOString().replace('T', ' ').substring(0, 16);
+      this.saveSession(user, rememberMe);
+      this.hideAuthModal();
+      this.updateHeaderBadge();
+      this.enforceRolePermissions();
+
+      // If on login route, navigate to root
+      if (window.location.pathname.startsWith('/login') || window.location.pathname.startsWith('/register')) {
+        window.history.pushState({}, '', '/');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
+
+      return { success: true, user };
+    },
+
+    logout() {
+      this.clearSession();
+      this.showAuthModal('login');
+      this.updateHeaderBadge();
+      window.history.pushState({}, '', '/login');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    },
+
+    switchRole(email) {
+      const user = DEMO_USERS[email];
+      if (user) {
+        user.lastLogin = new Date().toISOString().replace('T', ' ').substring(0, 16);
+        this.saveSession(user, true);
+        this.updateHeaderBadge();
+        this.enforceRolePermissions();
+      }
+    },
+
+    isRouteAllowed(path) {
+      if (!this.currentUser) return false;
+      const allowed = this.currentUser.allowedRoutes || [];
+      if (allowed.includes('*')) return true;
+      const cleanPath = path.split('?')[0].split('#')[0] || '/';
+      if (cleanPath === '/' || cleanPath === '') return true;
+      return allowed.some(r => cleanPath === r || cleanPath.startsWith(r + '/'));
+    },
+
+    checkRouteAndAuth() {
+      const path = window.location.pathname;
+
+      if (path === '/login') {
+        this.showAuthModal('login');
+        return;
+      }
+      if (path === '/register') {
+        this.showAuthModal('register');
+        return;
+      }
+      if (path === '/forgot-password') {
+        this.showAuthModal('forgot-password');
+        return;
+      }
+      if (path === '/reset-password') {
+        this.showAuthModal('reset-password');
+        return;
+      }
+
+      if (!this.currentUser) {
+        this.showAuthModal('login');
+      } else {
+        this.hideAuthModal();
+        this.enforceRolePermissions();
+      }
+    },
+
+    listenToNavigation() {
+      const originalPushState = history.pushState.bind(history);
+      history.pushState = (...args) => {
+        originalPushState(...args);
+        setTimeout(() => this.checkRouteAndAuth(), 20);
+      };
+
+      const originalReplaceState = history.replaceState.bind(history);
+      history.replaceState = (...args) => {
+        originalReplaceState(...args);
+        setTimeout(() => this.checkRouteAndAuth(), 20);
+      };
+
+      window.addEventListener('popstate', () => {
+        this.checkRouteAndAuth();
+      });
+    },
+
+    // HTTP Request Interceptors for Base44 bundle compatibility
+    installInterceptors() {
+      const self = this;
+
+      // 1. Intercept fetch
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async function(url, options = {}) {
+        const urlStr = typeof url === 'string' ? url : (url && url.url ? url.url : '');
+        
+        // Handle public-settings
+        if (urlStr.includes('/public-settings/by-id/')) {
+          return new Response(JSON.stringify({
+            id: '6a9979e6619575e4214f209f',
+            public_settings: { auth_required: true, app_name: 'RailSync AI' }
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+
+        // Handle me
+        if (urlStr.includes('/entities/User/me')) {
+          if (self.currentUser) {
+            return new Response(JSON.stringify({
+              id: self.currentUser.id,
+              email: self.currentUser.email,
+              full_name: self.currentUser.name,
+              employee_id: self.currentUser.employeeId,
+              department: self.currentUser.department,
+              role: self.currentUser.role,
+              division: self.currentUser.division,
+              zone: self.currentUser.zone,
+              status: self.currentUser.status,
+              last_login: self.currentUser.lastLogin,
+              created_at: self.currentUser.createdAt
+            }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+          } else {
+            return new Response(JSON.stringify({
+              status: 401,
+              message: 'Authentication required',
+              data: { extra_data: { reason: 'auth_required' } }
+            }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+          }
+        }
+
+        // Handle auth/login
+        if (urlStr.includes('/auth/login')) {
+          try {
+            const body = options.body ? JSON.parse(options.body) : {};
+            const res = self.login(body.email, body.password);
+            if (res.success) {
+              return new Response(JSON.stringify({
+                access_token: `demo_token_${res.user.id}`,
+                user: res.user
+              }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+            } else {
+              return new Response(JSON.stringify({
+                status: 401,
+                message: res.message
+              }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+            }
+          } catch (e) {}
+        }
+
+        try {
+          return await originalFetch(url, options);
+        } catch (err) {
+          // Swallow offline log errors silently
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }
+      };
+
+      // 2. Intercept XMLHttpRequest
+      const originalXOpen = XMLHttpRequest.prototype.open;
+      const originalXSend = XMLHttpRequest.prototype.send;
+
+      XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+        this._rsUrl = url;
+        this._rsMethod = method;
+        return originalXOpen.apply(this, [method, url, ...rest]);
+      };
+
+      XMLHttpRequest.prototype.send = function(body) {
+        const urlStr = this._rsUrl || '';
+
+        if (urlStr.includes('/public-settings/by-id/')) {
+          Object.defineProperty(this, 'status', { writable: false, value: 200 });
+          Object.defineProperty(this, 'responseText', {
+            writable: false,
+            value: JSON.stringify({ id: '6a9979e6619575e4214f209f', public_settings: { auth_required: true } })
+          });
+          this.dispatchEvent(new Event('load'));
+          return;
+        }
+
+        if (urlStr.includes('/entities/User/me')) {
+          if (self.currentUser) {
+            Object.defineProperty(this, 'status', { writable: false, value: 200 });
+            Object.defineProperty(this, 'responseText', {
+              writable: false,
+              value: JSON.stringify(self.currentUser)
+            });
+            this.dispatchEvent(new Event('load'));
+          } else {
+            Object.defineProperty(this, 'status', { writable: false, value: 401 });
+            Object.defineProperty(this, 'responseText', {
+              writable: false,
+              value: JSON.stringify({ message: 'Authentication required', data: { extra_data: { reason: 'auth_required' } } })
+            });
+            this.dispatchEvent(new Event('load'));
+          }
+          return;
+        }
+
+        return originalXSend.apply(this, arguments);
+      };
+    },
+
+    // Inject top disclaimer banner
+    injectTopDisclaimer() {
+      if (document.getElementById('railsync-top-disclaimer')) return;
+      const banner = document.createElement('div');
+      banner.id = 'railsync-top-disclaimer';
+      banner.className = 'railsync-top-disclaimer';
+      banner.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>SIMULATED DEMO DATA — NOT LIVE INDIAN RAILWAYS OPERATIONAL DATA</span>
+        <span style="opacity:0.6;font-size:0.62rem;">| AI Decision Support System Prototype</span>
+      `;
+      document.body.prepend(banner);
+    },
+
+    // Authentication Views (Login, Register, Forgot Password, Reset Password)
+    showAuthModal(view = 'login') {
+      this.activeView = view;
+      let overlay = document.getElementById('railsync-auth-overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'railsync-auth-overlay';
+        overlay.className = 'railsync-auth-overlay';
+        document.body.appendChild(overlay);
+      }
+      overlay.style.display = 'flex';
+      overlay.innerHTML = this.renderAuthView(view);
+      this.bindAuthEvents(view);
+    },
+
+    hideAuthModal() {
+      const overlay = document.getElementById('railsync-auth-overlay');
+      if (overlay) {
+        overlay.style.display = 'none';
+      }
+    },
+
+    renderAuthView(view) {
+      if (view === 'register') return this.renderRegisterView();
+      if (view === 'forgot-password') return this.renderForgotPasswordView();
+      if (view === 'reset-password') return this.renderResetPasswordView();
+      return this.renderLoginView();
+    },
+
+    renderLoginView() {
+      return `
+        <div class="railsync-auth-card">
+          <div class="railsync-auth-header">
+            <div class="railsync-auth-brand">
+              <div class="railsync-auth-logo-badge">R</div>
+              <div class="railsync-auth-brand-text">
+                <div class="railsync-auth-title">RailSync AI</div>
+                <div class="railsync-auth-subtitle">Railway Operations Intelligence Platform</div>
+              </div>
+            </div>
+            <div class="railsync-auth-tagline">Secure access for authorized railway personnel</div>
+          </div>
+
+          <div class="railsync-ir-notice">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+            <span>Indian Railways Operations Control Room • Terminal Restricted</span>
+          </div>
+
+          <!-- Quick Demo Role Picker -->
+          <div class="railsync-demo-roles">
+            <div class="railsync-demo-roles-title">
+              <span>Quick Select Demo Role</span>
+              <span class="railsync-demo-roles-badge">1-Click Login</span>
+            </div>
+            <div class="railsync-role-chips">
+              <button type="button" class="railsync-role-chip active" data-role="controller@railsync.ai" title="Operating / Section Control">Section Controller</button>
+              <button type="button" class="railsync-role-chip" data-role="engineering@railsync.ai" title="Civil Engineering / P-Way">Engineering Officer</button>
+              <button type="button" class="railsync-role-chip" data-role="ohe@railsync.ai" title="Electrical Traction / OHE">OHE Officer</button>
+              <button type="button" class="railsync-role-chip" data-role="snt@railsync.ai" title="Signal & Telecommunication">S&T Officer</button>
+              <button type="button" class="railsync-role-chip" data-role="admin@railsync.ai" title="Full System Administrator">System Admin</button>
+            </div>
+          </div>
+
+          <div id="rs-auth-error" class="railsync-alert railsync-alert-danger" style="display:none;"></div>
+          <div id="rs-auth-success" class="railsync-alert railsync-alert-success" style="display:none;"></div>
+
+          <form id="rs-login-form">
+            <div class="railsync-form-group">
+              <label class="railsync-label" for="rs-login-id">Email / Employee ID</label>
+              <div class="railsync-input-wrap">
+                <input type="text" id="rs-login-id" class="railsync-input" placeholder="e.g. controller@railsync.ai or IR-774023-CTR" value="controller@railsync.ai" required autocomplete="username">
+              </div>
+            </div>
+
+            <div class="railsync-form-group">
+              <label class="railsync-label" for="rs-login-pass">Security Password</label>
+              <div class="railsync-input-wrap">
+                <input type="password" id="rs-login-pass" class="railsync-input" placeholder="Enter password" value="Control@RailSync2026" required autocomplete="current-password">
+                <button type="button" id="rs-toggle-pass" class="railsync-input-icon" title="Show/Hide Password">👁</button>
+              </div>
+            </div>
+
+            <div class="railsync-form-helper">
+              <label class="railsync-checkbox-label">
+                <input type="checkbox" id="rs-remember-me" checked>
+                <span>Remember this terminal</span>
+              </label>
+              <a href="javascript:void(0)" id="rs-go-forgot" class="railsync-link">Forgot password?</a>
+            </div>
+
+            <button type="submit" id="rs-btn-submit" class="railsync-btn-primary">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
+              <span>Sign In to Operations Console</span>
+            </button>
+
+            <button type="button" id="rs-go-register" class="railsync-btn-secondary">
+              Register New Personnel Account
+            </button>
+          </form>
+
+          <div class="railsync-auth-footer">
+            <div class="railsync-auth-footer-text">AI Decision Support System • Authorized Personnel Only</div>
+            <div class="railsync-auth-disclaimer">SIMULATED DEMO DATA — NOT LIVE INDIAN RAILWAYS OPERATIONAL DATA</div>
+          </div>
+        </div>
+      `;
+    },
+
+    renderRegisterView() {
+      return `
+        <div class="railsync-auth-card" style="max-width: 520px;">
+          <div class="railsync-auth-header">
+            <div class="railsync-auth-brand">
+              <div class="railsync-auth-logo-badge">R</div>
+              <div class="railsync-auth-brand-text">
+                <div class="railsync-auth-title">Personnel Registration</div>
+                <div class="railsync-auth-subtitle">Indian Railways Operations Console</div>
+              </div>
+            </div>
+            <div class="railsync-auth-tagline">Create an authorized railway operations account</div>
+          </div>
+
+          <div id="rs-reg-error" class="railsync-alert railsync-alert-danger" style="display:none;"></div>
+
+          <form id="rs-register-form">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+              <div class="railsync-form-group">
+                <label class="railsync-label" for="rs-reg-name">Full Name</label>
+                <input type="text" id="rs-reg-name" class="railsync-input" placeholder="e.g. Ramesh Chandra" required>
+              </div>
+              <div class="railsync-form-group">
+                <label class="railsync-label" for="rs-reg-empid">Employee ID</label>
+                <input type="text" id="rs-reg-empid" class="railsync-input" placeholder="e.g. IR-662391-ENG" required>
+              </div>
+            </div>
+
+            <div class="railsync-form-group">
+              <label class="railsync-label" for="rs-reg-email">Official Railway Email</label>
+              <input type="email" id="rs-reg-email" class="railsync-input" placeholder="e.g. ramesh.c@railsync.ai" required>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+              <div class="railsync-form-group">
+                <label class="railsync-label" for="rs-reg-role">Designation / Role</label>
+                <select id="rs-reg-role" class="railsync-input" style="background:#0D1321;">
+                  <option value="Section Controller">Section Controller</option>
+                  <option value="Engineering Officer">Engineering Officer</option>
+                  <option value="OHE Officer">OHE Officer</option>
+                  <option value="S&T Officer">S&T Officer</option>
+                  <option value="Chief Operations Manager">Chief Operations Manager</option>
+                  <option value="Maintenance Supervisor">Maintenance Supervisor</option>
+                  <option value="System Administrator">System Administrator</option>
+                </select>
+              </div>
+              <div class="railsync-form-group">
+                <label class="railsync-label" for="rs-reg-dept">Department</label>
+                <input type="text" id="rs-reg-dept" class="railsync-input" placeholder="e.g. Operating" value="Operating">
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+              <div class="railsync-form-group">
+                <label class="railsync-label" for="rs-reg-zone">Railway Zone</label>
+                <input type="text" id="rs-reg-zone" class="railsync-input" value="Northern Railway (NR)">
+              </div>
+              <div class="railsync-form-group">
+                <label class="railsync-label" for="rs-reg-div">Division</label>
+                <input type="text" id="rs-reg-div" class="railsync-input" value="Delhi (DLI)">
+              </div>
+            </div>
+
+            <div class="railsync-form-group">
+              <label class="railsync-label" for="rs-reg-pass">Create Password</label>
+              <input type="password" id="rs-reg-pass" class="railsync-input" placeholder="Min. 8 characters" required>
+            </div>
+
+            <button type="submit" class="railsync-btn-primary" style="margin-top:0.5rem;">
+              Complete Registration & Authorize
+            </button>
+            <button type="button" id="rs-reg-back" class="railsync-btn-secondary">
+              Back to Sign In
+            </button>
+          </form>
+        </div>
+      `;
+    },
+
+    renderForgotPasswordView() {
+      return `
+        <div class="railsync-auth-card">
+          <div class="railsync-auth-header">
+            <div class="railsync-auth-brand">
+              <div class="railsync-auth-logo-badge">R</div>
+              <div class="railsync-auth-brand-text">
+                <div class="railsync-auth-title">Password Recovery</div>
+                <div class="railsync-auth-subtitle">Indian Railways Personnel Access</div>
+              </div>
+            </div>
+            <div class="railsync-auth-tagline">Recover terminal operations credentials</div>
+          </div>
+
+          <div id="rs-forgot-msg" class="railsync-alert railsync-alert-success" style="display:none;"></div>
+          <div id="rs-forgot-err" class="railsync-alert railsync-alert-danger" style="display:none;"></div>
+
+          <form id="rs-forgot-form">
+            <div class="railsync-form-group">
+              <label class="railsync-label" for="rs-forgot-input">Employee ID or Railway Email</label>
+              <input type="text" id="rs-forgot-input" class="railsync-input" placeholder="e.g. controller@railsync.ai" required>
+            </div>
+
+            <div style="font-size:0.75rem; color:#9CA3AF; line-height:1.4; margin-bottom:1.25rem;">
+              A one-time simulation recovery link will be generated for your verified terminal.
+            </div>
+
+            <button type="submit" class="railsync-btn-primary">
+              Generate Recovery Link
+            </button>
+            <button type="button" id="rs-forgot-back" class="railsync-btn-secondary">
+              Back to Sign In
+            </button>
+          </form>
+        </div>
+      `;
+    },
+
+    renderResetPasswordView() {
+      return `
+        <div class="railsync-auth-card">
+          <div class="railsync-auth-header">
+            <div class="railsync-auth-brand">
+              <div class="railsync-auth-logo-badge">R</div>
+              <div class="railsync-auth-brand-text">
+                <div class="railsync-auth-title">Reset Security Password</div>
+                <div class="railsync-auth-subtitle">Indian Railways Terminal Security</div>
+              </div>
+            </div>
+            <div class="railsync-auth-tagline">Set a new password for operations console</div>
+          </div>
+
+          <div id="rs-reset-msg" class="railsync-alert railsync-alert-success" style="display:none;"></div>
+          <div id="rs-reset-err" class="railsync-alert railsync-alert-danger" style="display:none;"></div>
+
+          <form id="rs-reset-form">
+            <div class="railsync-form-group">
+              <label class="railsync-label" for="rs-reset-new">New Password</label>
+              <input type="password" id="rs-reset-new" class="railsync-input" placeholder="At least 8 characters" required>
+            </div>
+            <div class="railsync-form-group">
+              <label class="railsync-label" for="rs-reset-confirm">Confirm New Password</label>
+              <input type="password" id="rs-reset-confirm" class="railsync-input" placeholder="Re-enter password" required>
+            </div>
+
+            <button type="submit" class="railsync-btn-primary">
+              Save New Password & Sign In
+            </button>
+            <button type="button" id="rs-reset-back" class="railsync-btn-secondary">
+              Back to Sign In
+            </button>
+          </form>
+        </div>
+      `;
+    },
+
+    bindAuthEvents(view) {
+      const self = this;
+
+      if (view === 'login') {
+        const chips = document.querySelectorAll('.railsync-role-chip');
+        const idInput = document.getElementById('rs-login-id');
+        const passInput = document.getElementById('rs-login-pass');
+        const toggleBtn = document.getElementById('rs-toggle-pass');
+        const loginForm = document.getElementById('rs-login-form');
+        const errDiv = document.getElementById('rs-auth-error');
+
+        // Passwords for demo roles
+        const demoPasswords = {
+          'admin@railsync.ai': 'Admin@RailSync2026',
+          'controller@railsync.ai': 'Control@RailSync2026',
+          'engineering@railsync.ai': 'Engg@RailSync2026',
+          'ohe@railsync.ai': 'Ohe@RailSync2026',
+          'snt@railsync.ai': 'Snt@RailSync2026'
+        };
+
+        // Quick Role Chip selection
+        chips.forEach(chip => {
+          chip.addEventListener('click', () => {
+            chips.forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            const roleEmail = chip.dataset.role;
+            idInput.value = roleEmail;
+            passInput.value = demoPasswords[roleEmail] || 'RailSync@2026';
+            errDiv.style.display = 'none';
+          });
+        });
+
+        // Toggle password visibility
+        if (toggleBtn) {
+          toggleBtn.addEventListener('click', () => {
+            if (passInput.type === 'password') {
+              passInput.type = 'text';
+              toggleBtn.textContent = '🔒';
+            } else {
+              passInput.type = 'password';
+              toggleBtn.textContent = '👁';
+            }
+          });
+        }
+
+        // Switch to Forgot Password
+        document.getElementById('rs-go-forgot').addEventListener('click', () => {
+          self.showAuthModal('forgot-password');
+        });
+
+        // Switch to Register
+        document.getElementById('rs-go-register').addEventListener('click', () => {
+          self.showAuthModal('register');
+        });
+
+        // Submit Login
+        loginForm.addEventListener('submit', (e) => {
+          e.preventDefault();
+          errDiv.style.display = 'none';
+          const submitBtn = document.getElementById('rs-btn-submit');
+          submitBtn.disabled = true;
+          submitBtn.innerHTML = '<span>Verifying Railway Credentials...</span>';
+
+          setTimeout(() => {
+            const rememberMe = document.getElementById('rs-remember-me').checked;
+            const res = self.login(idInput.value, passInput.value, rememberMe);
+            if (!res.success) {
+              errDiv.textContent = res.message;
+              errDiv.style.display = 'block';
+              submitBtn.disabled = false;
+              submitBtn.innerHTML = '<span>Sign In to Operations Console</span>';
+            }
+          }, 300);
+        });
+      }
+
+      if (view === 'register') {
+        document.getElementById('rs-reg-back').addEventListener('click', () => self.showAuthModal('login'));
+        document.getElementById('rs-register-form').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const name = document.getElementById('rs-reg-name').value;
+          const empid = document.getElementById('rs-reg-empid').value;
+          const email = document.getElementById('rs-reg-email').value;
+          const role = document.getElementById('rs-reg-role').value;
+          const dept = document.getElementById('rs-reg-dept').value;
+          const zone = document.getElementById('rs-reg-zone').value;
+          const div = document.getElementById('rs-reg-div').value;
+
+          const newUser = {
+            id: `usr_${Date.now()}`,
+            employeeId: empid,
+            name: name,
+            email: email,
+            department: dept,
+            role: role,
+            roleKey: 'custom',
+            division: div,
+            zone: zone,
+            status: 'Active',
+            lastLogin: new Date().toISOString().replace('T', ' ').substring(0, 16),
+            createdAt: new Date().toISOString().split('T')[0],
+            allowedRoutes: ['*']
+          };
+
+          DEMO_USERS[email.toLowerCase()] = newUser;
+          DEMO_USERS_BY_EMP_ID[empid.toLowerCase()] = newUser;
+          self.saveSession(newUser, true);
+          self.hideAuthModal();
+          self.updateHeaderBadge();
+          self.enforceRolePermissions();
+          window.history.pushState({}, '', '/');
+        });
+      }
+
+      if (view === 'forgot-password') {
+        document.getElementById('rs-forgot-back').addEventListener('click', () => self.showAuthModal('login'));
+        document.getElementById('rs-forgot-form').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const val = document.getElementById('rs-forgot-input').value;
+          const msg = document.getElementById('rs-forgot-msg');
+          msg.textContent = `Simulation: Password reset link authorized for "${val}". Redirecting to Reset Password...`;
+          msg.style.display = 'block';
+          setTimeout(() => self.showAuthModal('reset-password'), 1200);
+        });
+      }
+
+      if (view === 'reset-password') {
+        document.getElementById('rs-reset-back').addEventListener('click', () => self.showAuthModal('login'));
+        document.getElementById('rs-reset-form').addEventListener('submit', (e) => {
+          e.preventDefault();
+          const p1 = document.getElementById('rs-reset-new').value;
+          const p2 = document.getElementById('rs-reset-confirm').value;
+          const err = document.getElementById('rs-reset-err');
+          const msg = document.getElementById('rs-reset-msg');
+
+          if (p1 !== p2) {
+            err.textContent = 'Passwords do not match.';
+            err.style.display = 'block';
+            return;
+          }
+
+          msg.textContent = 'Password reset successfully. Redirecting to sign in...';
+          msg.style.display = 'block';
+          setTimeout(() => self.showAuthModal('login'), 1200);
+        });
+      }
+    },
+
+    // Header Personnel Badge & Quick Role Switcher
+    setupHeaderObserver() {
+      const self = this;
+      setInterval(() => {
+        self.updateHeaderBadge();
+        self.updateSidebarRestrictions();
+      }, 500);
+    },
+
+    updateHeaderBadge() {
+      const user = this.currentUser;
+      if (!user) return;
+
+      const header = document.querySelector('header');
+      if (!header) return;
+
+      let badgeContainer = document.getElementById('railsync-header-badge');
+      if (!badgeContainer) {
+        badgeContainer = document.createElement('div');
+        badgeContainer.id = 'railsync-header-badge';
+        badgeContainer.className = 'railsync-header-badge-container';
+        badgeContainer.style.marginLeft = 'auto';
+
+        // Find existing email text if present and remove it
+        header.querySelectorAll('div').forEach(d => {
+          if (d.textContent && d.textContent.includes('@') && !d.closest('#railsync-header-badge')) {
+            d.style.display = 'none';
+          }
+        });
+
+        header.appendChild(badgeContainer);
+      }
+
+      const roleClass = `role-${user.roleKey || 'controller'}`;
+
+      badgeContainer.innerHTML = `
+        <div class="railsync-user-pill" id="rs-user-pill-btn" title="Click to view details & switch role">
+          <div class="railsync-avatar-circle">${user.name ? user.name.charAt(0) : 'U'}</div>
+          <div class="railsync-user-name">${user.name}</div>
+          <div class="railsync-role-tag ${roleClass}">${user.role}</div>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </div>
+
+        <div class="railsync-profile-dropdown" id="rs-profile-dropdown">
+          <div class="railsync-dropdown-header">
+            <div style="font-weight:700;font-size:0.85rem;color:#FFF;">${user.name}</div>
+            <div class="railsync-dropdown-emp-id">${user.employeeId} • ${user.zone}</div>
+            <div class="railsync-dropdown-dept">${user.department} (${user.division})</div>
+            <div style="font-size:0.68rem;color:#6B7280;margin-top:0.25rem;">Last login: ${user.lastLogin}</div>
+          </div>
+
+          <div class="railsync-dropdown-section-title">Quick Switch Demo Role</div>
+          ${Object.values(DEMO_USERS).map(u => `
+            <button type="button" class="railsync-dropdown-role-btn ${u.email === user.email ? 'active' : ''}" data-email="${u.email}">
+              <span>${u.role}</span>
+              <span style="font-size:0.65rem;color:#9CA3AF;">${u.name.split(' ')[0]}</span>
+            </button>
+          `).join('')}
+
+          <button type="button" class="railsync-dropdown-logout" id="rs-btn-logout">
+            Sign Out / Lock Terminal
+          </button>
+        </div>
+      `;
+
+      // Toggle dropdown
+      const pillBtn = document.getElementById('rs-user-pill-btn');
+      const dropdown = document.getElementById('rs-profile-dropdown');
+
+      pillBtn.onclick = (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('open');
+      };
+
+      document.onclick = (e) => {
+        if (!e.target.closest('#railsync-header-badge')) {
+          dropdown.classList.remove('open');
+        }
+      };
+
+      // Role switcher click
+      badgeContainer.querySelectorAll('.railsync-dropdown-role-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const email = btn.dataset.email;
+          this.switchRole(email);
+          dropdown.classList.remove('open');
+        };
+      });
+
+      // Logout click
+      document.getElementById('rs-btn-logout').onclick = () => {
+        this.logout();
+      };
+    },
+
+    // Sidebar navigation lock indicators & route restriction enforcement
+    updateSidebarRestrictions() {
+      const user = this.currentUser;
+      if (!user) return;
+
+      const navLinks = document.querySelectorAll('aside nav a');
+      navLinks.forEach(link => {
+        const href = link.getAttribute('href') || '';
+        let route = '';
+        try {
+          const u = new URL(href, window.location.origin);
+          route = u.pathname;
+        } catch (e) {
+          route = href;
+        }
+
+        const isAllowed = this.isRouteAllowed(route);
+        if (!isAllowed) {
+          if (!link.dataset.rsRestricted) {
+            link.dataset.rsRestricted = 'true';
+            link.style.opacity = '0.45';
+            link.style.cursor = 'not-allowed';
+            if (!link.querySelector('.rs-lock-tag')) {
+              const lock = document.createElement('span');
+              lock.className = 'rs-lock-tag';
+              lock.style.marginLeft = 'auto';
+              lock.style.fontSize = '11px';
+              lock.textContent = '🔒';
+              link.appendChild(lock);
+            }
+          }
+        } else {
+          if (link.dataset.rsRestricted) {
+            delete link.dataset.rsRestricted;
+            link.style.opacity = '1';
+            link.style.cursor = 'pointer';
+            const lock = link.querySelector('.rs-lock-tag');
+            if (lock) lock.remove();
+          }
+        }
+      });
+    },
+
+    enforceRolePermissions() {
+      const path = window.location.pathname;
+      if (path === '/login' || path === '/register' || path === '/forgot-password' || path === '/reset-password') {
+        return;
+      }
+
+      if (!this.currentUser) {
+        this.showAuthModal('login');
+        return;
+      }
+
+      const isAllowed = this.isRouteAllowed(path);
+      const main = document.querySelector('main');
+
+      if (!isAllowed && main) {
+        // Render Access Restriction Card inside main view
+        main.innerHTML = `
+          <div class="railsync-restricted-view">
+            <div class="railsync-restricted-icon">🔒</div>
+            <div class="railsync-restricted-title">Operations Module Access Restricted</div>
+            <div class="railsync-restricted-desc">
+              Your authorized credential role <strong>${this.currentUser.role}</strong> does not possess clearance for module <code>${path}</code>.<br><br>
+              Authorized departments: <em>${this.getRequiredRolesForRoute(path)}</em>.
+            </div>
+            <div style="display:flex; gap:0.75rem;">
+              <button type="button" class="railsync-btn-primary" style="width:auto; padding:0 1.25rem;" onclick="window.history.pushState({}, '', '/'); window.dispatchEvent(new PopStateEvent('popstate'));">
+                Return to Authorized Dashboard
+              </button>
+              <button type="button" class="railsync-btn-secondary" style="width:auto; padding:0 1.25rem; margin-top:0;" onclick="RailSyncAuth.switchRole('admin@railsync.ai')">
+                Switch to System Administrator
+              </button>
+            </div>
+          </div>
+        `;
+      }
+    },
+
+    getRequiredRolesForRoute(path) {
+      if (path.includes('trains') || path.includes('conflicts') || path.includes('simulator')) {
+        return 'Section Controller, COM, System Administrator';
+      }
+      if (path.includes('fusion') || path.includes('intelligence')) {
+        return 'Engineering Officer, S&T Officer, System Administrator';
+      }
+      if (path.includes('asset-health')) {
+        return 'OHE Officer, System Administrator';
+      }
+      return 'Authorized Railway Operations Personnel';
+    }
+  };
+
+  // Expose globally
+  window.RailSyncAuth = RailSyncAuth;
+
+  // Initialize once DOM is ready or immediately if already loaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => RailSyncAuth.init());
+  } else {
+    RailSyncAuth.init();
+  }
+})();
