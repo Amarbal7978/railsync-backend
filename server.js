@@ -1,6 +1,11 @@
+require('dotenv').config();
+const { testDatabaseConnection } = require('./db/database');
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const { findUserByLogin } = require('./db/auth');
+const { verifyPassword } = require('./db/password');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -144,47 +149,71 @@ app.get('/api/apps/:appId/entities/User/me', (req, res) => {
   });
 });
 
-app.post('/api/apps/:appId/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  const key = (email || '').trim().toLowerCase();
+app.post('/api/apps/:appId/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const login = (email || '').trim().toLowerCase();
 
-  const user = DEMO_USERS[key] || DEMO_USERS_BY_EMP_ID[key] || {
-  id: `guest_${Date.now()}`,
-  email: email,
-  full_name: email.split('@')[0],
-  role: 'Section Controller',
-  employee_id: `GUEST-${Date.now()}`,
-  department: 'Demo Operations',
-  is_active: true,
-  password: password
-};
-
-if (!email || !password) {
-  return res.status(400).json({
-    status: 400,
-    message: 'Email and password are required'
-  });
-}
-
-  const token = `demo_token_${user.id}_${Date.now()}`;
-  activeSessions.set(token, user);
-
-  res.json({
-    access_token: token,
-    token_type: 'Bearer',
-    user: {
-      id: user.id,
-      email: user.email,
-      full_name: user.name,
-      employee_id: user.employeeId,
-      department: user.department,
-      role: user.role,
-      division: user.division,
-      zone: user.zone
+    if (!login || !password) {
+      return res.status(400).json({
+        status: 400,
+        message: 'Email and password are required'
+      });
     }
-  });
-});
 
+    const dbUser = await findUserByLogin(login);
+
+    const passwordValid = dbUser
+  ? await verifyPassword(password, dbUser.password)
+  : false;
+
+if (!dbUser || !passwordValid) {
+      return res.status(401).json({
+        status: 401,
+        message: 'Invalid email/employee ID or password'
+      });
+    }
+
+    const user = {
+      id: dbUser.id,
+      employeeId: dbUser.employee_id,
+      name: dbUser.name,
+      email: dbUser.email,
+      department: dbUser.department,
+      role: dbUser.role,
+      division: dbUser.division,
+      zone: dbUser.zone,
+      status: dbUser.status,
+      createdAt: dbUser.created_at,
+      lastLogin: dbUser.last_login
+    };
+
+    const token = `db_token_${user.id}_${Date.now()}`;
+    activeSessions.set(token, user);
+
+    res.json({
+      access_token: token,
+      token_type: 'Bearer',
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.name,
+        employee_id: user.employeeId,
+        department: user.department,
+        role: user.role,
+        division: user.division,
+        zone: user.zone
+      }
+    });
+  } catch (error) {
+    console.error('Database login error:', error.message);
+
+    res.status(500).json({
+      status: 500,
+      message: 'Login failed due to server error'
+    });
+  }
+});
 app.post('/api/apps/:appId/auth/register', (req, res) => {
   const {
   name,
@@ -258,6 +287,9 @@ app.get('*', (req, res) => {
 
 // Start Server with error handling
 const server = app.listen(PORT, () => {
+  testDatabaseConnection().catch((err) => {
+    console.error('Database connection failed:', err.message);
+  });
   console.log(`\n======================================================`);
   console.log(`🚆 RailSync AI Server running on http://localhost:${PORT}`);
   console.log(`======================================================`);
