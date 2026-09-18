@@ -301,12 +301,7 @@
 registerForm.reset();
 registerForm.style.display = "none";
 loginForm.style.display = "block";
-        showMessage("Account created successfully!", "#86efac");
-
-        setTimeout(function () {
-          window.location.href =
-            "https://rail-sync-ai-prototype.base44.app";
-        }, 1000);
+      
 
       } catch (error) {
         showMessage(error.message || "Registration error", "#fca5a5");
