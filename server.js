@@ -1,11 +1,10 @@
 require('dotenv').config();
-const { testDatabaseConnection } = require('./db/database');
-
+const { pool, testDatabaseConnection } = require('./db/database');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { findUserByLogin } = require('./db/auth');
-const { verifyPassword } = require('./db/password');
+const { hashPassword, verifyPassword } = require('./db/password');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -166,6 +165,13 @@ app.post('/api/apps/:appId/auth/login', async (req, res) => {
     const passwordValid = dbUser
   ? await verifyPassword(password, dbUser.password)
   : false;
+  console.log("LOGIN DEBUG:", {
+  login,
+  userFound: !!dbUser,
+  passwordFieldExists: !!dbUser?.password,
+  passwordHashLength: dbUser?.password?.length || 0,
+  passwordValid
+});
 
 if (!dbUser || !passwordValid) {
       return res.status(401).json({
@@ -214,44 +220,114 @@ if (!dbUser || !passwordValid) {
     });
   }
 });
-app.post('/api/apps/:appId/auth/register', (req, res) => {
-  const {
-  name,
-  email,
-  password,
-  employeeId,
-  department,
-  role,
-  division,
-  zone
-} = req.body;
-  const newUser = {
-    id: `usr_${Date.now()}`,
-    employeeId: employeeId || `IR-${Math.floor(100000 + Math.random() * 900000)}`,
-    name: name || 'Railway Officer',
-    password: password,
-    email: email || `user_${Date.now()}@railsync.ai`,
-    department: department || 'Operations',
-    role: role || 'Section Controller',
-    division: division || 'Delhi (DLI)',
-    zone: zone || 'Northern Railway (NR)',
-    status: 'Active',
-    lastLogin: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
-    allowedModules: ['*']
-  };
+app.post('/api/apps/:appId/auth/register', async (req, res) => {
+  try {
+    const {
+      name,
+      email,
+      password,
+      employeeId,
+      department,
+      role,
+      division,
+      zone
+    } = req.body;
 
-  DEMO_USERS[newUser.email.toLowerCase()] = newUser;
-  DEMO_USERS_BY_EMP_ID[newUser.employeeId.toLowerCase()] = newUser;
+    const loginEmail = (email || '').trim().toLowerCase();
 
-  const token = `demo_token_${newUser.id}_${Date.now()}`;
-  activeSessions.set(token, newUser);
+    if (!name || !loginEmail || !password) {
+      return res.status(400).json({
+        status: 400,
+        message: 'Name, email and password are required'
+      });
+    }
 
-  res.json({
-    access_token: token,
-    user: newUser,
-    message: 'Registration successful'
-  });
+    if (password.length < 6) {
+      return res.status(400).json({
+        status: 400,
+        message: 'Password must contain at least 6 characters'
+      });
+    }
+
+    const existingUser = await pool.query(
+      `SELECT id FROM users
+       WHERE LOWER(email) = LOWER($1)
+       LIMIT 1`,
+      [loginEmail]
+    );
+
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({
+        status: 409,
+        message: 'Email is already registered'
+      });
+    }
+
+    const newUserId = `usr_${Date.now()}`;
+    const newEmployeeId =
+      employeeId || `IR-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const hashedPassword = await hashPassword(password);
+
+    const result = await pool.query(
+      `INSERT INTO users
+       (id, employee_id, name, email, password, department, role, division, zone)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, employee_id, name, email, department, role, division, zone`,
+      [
+        newUserId,
+        newEmployeeId,
+        name,
+        loginEmail,
+        hashedPassword,
+        department || 'Operations',
+        role || 'Section Controller',
+        division || 'Delhi (DLI)',
+        zone || 'Northern Railway (NR)'
+      ]
+    );
+
+    const dbUser = result.rows[0];
+
+    const user = {
+      id: dbUser.id,
+      employeeId: dbUser.employee_id,
+      name: dbUser.name,
+      email: dbUser.email,
+      department: dbUser.department,
+      role: dbUser.role,
+      division: dbUser.division,
+      zone: dbUser.zone
+    };
+
+    const token = `db_token_${user.id}_${Date.now()}`;
+
+    activeSessions.set(token, user);
+
+    res.status(201).json({
+      access_token: token,
+      token_type: 'Bearer',
+      user: {
+        id: user.id,
+        email: user.email,
+        full_name: user.name,
+        employee_id: user.employeeId,
+        department: user.department,
+        role: user.role,
+        division: user.division,
+        zone: user.zone
+      },
+      message: 'Registration successful'
+    });
+
+  } catch (error) {
+    console.error('Database registration error:', error.message);
+
+    res.status(500).json({
+      status: 500,
+      message: 'Registration failed due to server error'
+    });
+  }
 });
 
 app.post('/api/apps/:appId/auth/reset-password-request', (req, res) => {
