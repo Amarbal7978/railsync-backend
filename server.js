@@ -5,7 +5,8 @@ const cors = require('cors');
 const path = require('path');
 const { findUserByLogin } = require('./db/auth');
 const { hashPassword, verifyPassword } = require('./db/password');
-
+const { sendOtpEmail } = require('./utils/mailer');
+const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -350,7 +351,107 @@ app.post('/api/apps/auth/logout', (req, res) => {
   activeSessions.delete(token);
   res.json({ message: 'Logged out successfully' });
 });
+// Forgot Password - Send OTP
+app.post('/api/apps/:appId/auth/forgot-password', async (req, res) => {
+  try {
+    const email = (req.body.email || '').trim().toLowerCase();
 
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    const userResult = await pool.query(
+      `SELECT id, email FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+      [email]
+    );
+
+    // Do not reveal whether an email exists
+    if (userResult.rows.length === 0) {
+      return res.json({ message: 'If the email exists, an OTP has been sent.' });
+    }
+
+    const user = userResult.rows[0];
+    const otp = String(crypto.randomInt(100000, 1000000));
+    const otpHash = crypto
+      .createHash('sha256')
+      .update(otp)
+      .digest('hex');
+
+    await pool.query(
+      `INSERT INTO password_reset_tokens
+       (user_id, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '10 minutes')`,
+      [user.id, otpHash]
+    );
+
+    await sendOtpEmail(user.email, otp);
+
+    res.json({ message: 'If the email exists, an OTP has been sent.' });
+  } catch (error) {
+    console.error('Forgot password error:', error.message);
+    res.status(500).json({ message: 'Unable to send OTP right now' });
+  }
+});
+
+// Forgot Password - Reset Password
+app.post('/api/apps/:appId/auth/reset-password', async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword || newPassword.length < 6) {
+      return res.status(400).json({
+        message: 'Email, OTP and a password of at least 6 characters are required'
+      });
+    }
+
+    const userResult = await pool.query(
+      `SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+      [email.trim().toLowerCase()]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    const userId = userResult.rows[0].id;
+    const otpHash = crypto
+      .createHash('sha256')
+      .update(String(otp))
+      .digest('hex');
+
+    const tokenResult = await pool.query(
+      `SELECT id FROM password_reset_tokens
+       WHERE user_id = $1
+         AND token_hash = $2
+         AND used = FALSE
+         AND expires_at > NOW()
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [userId, otpHash]
+    );
+
+    if (tokenResult.rows.length === 0) {
+      return res.status(400).json({ message: 'Invalid or expired OTP' });
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+
+    await pool.query(
+      `UPDATE users SET password = $1 WHERE id = $2`,
+      [hashedPassword, userId]
+    );
+
+    await pool.query(
+      `UPDATE password_reset_tokens SET used = TRUE WHERE id = $1`,
+      [tokenResult.rows[0].id]
+    );
+
+    res.json({ message: 'Password reset successfully. Please login again.' });
+  } catch (error) {
+    console.error('Reset password error:', error.message);
+    res.status(500).json({ message: 'Unable to reset password right now' });
+  }
+});
 // Serve static frontend assets from public/
 app.use(express.static(path.join(__dirname, 'public'), {
   index: false // Let SPA fallback handle index.html
