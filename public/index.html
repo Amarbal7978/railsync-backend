@@ -296,7 +296,11 @@
           throw new Error(data.message || "Registration failed");
         }
 
-        saveToken(data);
+        showMessage("Account created successfully! Ab login karein.", "#86efac");
+
+registerForm.reset();
+registerForm.style.display = "none";
+loginForm.style.display = "block";
         showMessage("Account created successfully!", "#86efac");
 
         setTimeout(function () {
