@@ -22,10 +22,11 @@
         radial-gradient(circle at top left, #31206b, transparent 40%),
         linear-gradient(135deg, #080516, #17102e, #090b20);
       color: white;
+      padding: 20px;
     }
 
     .login-card {
-      width: 90%;
+      width: 100%;
       max-width: 430px;
       padding: 38px;
       border: 1px solid rgba(167, 139, 250, 0.3);
@@ -93,11 +94,21 @@
       opacity: 0.85;
     }
 
+    .switch-button {
+      background: transparent;
+      border: 1px solid #7c3aed;
+      margin-top: 12px;
+    }
+
     #message {
       min-height: 22px;
       margin-top: 18px;
       text-align: center;
       font-size: 14px;
+    }
+
+    .hidden {
+      display: none;
     }
 
     .footer {
@@ -120,27 +131,59 @@
       Railway Operations Intelligence Platform
     </p>
 
+    <!-- Login Form -->
     <form id="loginForm">
-      <label for="email">Employee Email</label>
-
+      <label for="loginEmail">Employee Email</label>
       <input
         type="email"
-        id="email"
-        placeholder="admin@railsync.ai"
+        id="loginEmail"
+        placeholder="Enter your email"
         required
       />
 
-      <label for="password">Password</label>
-
+      <label for="loginPassword">Password</label>
       <input
         type="password"
-        id="password"
+        id="loginPassword"
         placeholder="Enter password"
         required
       />
 
       <button type="submit">Secure Login</button>
     </form>
+
+    <!-- Register Form -->
+    <form id="registerForm" class="hidden">
+      <label for="name">Full Name</label>
+      <input
+        type="text"
+        id="name"
+        placeholder="Enter your full name"
+        required
+      />
+
+      <label for="registerEmail">Email</label>
+      <input
+        type="email"
+        id="registerEmail"
+        placeholder="Enter your email"
+        required
+      />
+
+      <label for="registerPassword">Password</label>
+      <input
+        type="password"
+        id="registerPassword"
+        placeholder="Create a password"
+        required
+      />
+
+      <button type="submit">Create Account</button>
+    </form>
+
+    <button id="switchButton" class="switch-button">
+      New user? Register here
+    </button>
 
     <div id="message"></div>
 
@@ -153,54 +196,116 @@
 
   <script>
     const loginForm = document.getElementById("loginForm");
+    const registerForm = document.getElementById("registerForm");
+    const switchButton = document.getElementById("switchButton");
     const message = document.getElementById("message");
+
+    let registerMode = false;
+
+    function showMessage(text, color) {
+      message.style.color = color;
+      message.textContent = text;
+    }
+
+    function saveToken(data) {
+      const token = data.access_token || data.token;
+
+      if (token) {
+        localStorage.setItem("railsync_token", token);
+      }
+    }
+
+    switchButton.addEventListener("click", function () {
+      registerMode = !registerMode;
+      message.textContent = "";
+
+      if (registerMode) {
+        loginForm.classList.add("hidden");
+        registerForm.classList.remove("hidden");
+        switchButton.textContent = "Already registered? Login here";
+      } else {
+        registerForm.classList.add("hidden");
+        loginForm.classList.remove("hidden");
+        switchButton.textContent = "New user? Register here";
+      }
+    });
 
     loginForm.addEventListener("submit", async function (event) {
       event.preventDefault();
 
-      const email = document.getElementById("email").value.trim();
-      const password = document.getElementById("password").value;
+      const email = document.getElementById("loginEmail").value.trim();
+      const password = document.getElementById("loginPassword").value;
 
-      message.style.color = "#c4b5fd";
-      message.textContent = "Authenticating...";
+      showMessage("Authenticating...", "#c4b5fd");
 
       try {
-        const response = await fetch(
-          "/api/apps/railsync/auth/login",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              email: email,
-              password: password
-            })
-          }
-        );
+        const response = await fetch("/api/apps/railsync/auth/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ email, password })
+        });
+
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(
-            data.message || "Invalid email or password"
-          );
+          throw new Error(data.message || "Invalid email or password");
         }
 
-        if (data.token) {
-          localStorage.setItem("railsync_token", data.token);
-        }
-
-        message.style.color = "#86efac";
-        message.textContent = "Login successful!";
+        saveToken(data);
+        showMessage("Login successful!", "#86efac");
 
         setTimeout(function () {
-          window.location.href = "https://rail-sync-ai-prototype.base44.app";
+          window.location.href =
+            "https://rail-sync-ai-prototype.base44.app";
         }, 1000);
 
       } catch (error) {
-        message.style.color = "#fca5a5";
-        message.textContent =
-          error.message || "Network error";
+        showMessage(error.message || "Network error", "#fca5a5");
+      }
+    });
+
+    registerForm.addEventListener("submit", async function (event) {
+      event.preventDefault();
+
+      const name = document.getElementById("name").value.trim();
+      const email = document.getElementById("registerEmail").value.trim();
+      const password = document.getElementById("registerPassword").value;
+
+      showMessage("Creating account...", "#c4b5fd");
+
+      try {
+        const response = await fetch("/api/apps/railsync/auth/register", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            name,
+            email,
+            password,
+            department: "Operations",
+            role: "Section Controller"
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Registration failed");
+        }
+
+        saveToken(data);
+        showMessage("Account created successfully!", "#86efac");
+
+        setTimeout(function () {
+          window.location.href =
+            "https://rail-sync-ai-prototype.base44.app";
+        }, 1000);
+
+      } catch (error) {
+        showMessage(error.message || "Registration error", "#fca5a5");
       }
     });
   </script>
